@@ -1,0 +1,8 @@
+# Colab already includes torch, pandas, numpy and matplotlib. The notebook installs only the pinned packages below.
+transformers==4.57.3
+accelerate==1.11.0
+datasets==4.8.5
+torch
+pandas
+numpy
+matplotlib
