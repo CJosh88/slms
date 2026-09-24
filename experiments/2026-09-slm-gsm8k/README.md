@@ -38,4 +38,22 @@ To run locally, use `pip install -r requirements.txt` and a CUDA GPU with at lea
 
 ## Results
 
-TODO: fill after running
+200 GSM8K test questions, fp16. Per-question outputs are in [`results.csv`](results.csv).
+
+| Model | Accuracy | 95% CI | Used `####` format | Sec / question | Tokens / question | Tokens / sec | Hit 512-token cap | Peak GPU memory |
+|---|---|---|---|---|---|---|---|---|
+| Qwen3-1.7B | 80.0% | 73.9–85.0% | 55% | 2.49 | 264 | 106.0 | 2.0% | 4.1 GB |
+| SmolLM3-3B | 84.5% | 78.8–88.9% | 12% | 2.54 | 231 | 90.9 | 3.5% | 6.7 GB |
+| Phi-4-mini | **88.5%** | 83.3–92.2% | 57% | 2.47 | 217 | 87.8 | 0.0% | 8.3 GB |
+
+![Accuracy and speed](figures/accuracy_and_speed.png)
+
+![Tokens per question](figures/tokens_per_question.png)
+
+**Takeaways**
+
+- **Phi-4-mini scored highest (88.5%)**, followed by SmolLM3-3B (84.5%) and Qwen3-1.7B (80.0%). The Phi-4-mini and Qwen3 intervals barely overlap, so that gap is likely real. The gaps next to SmolLM3 are within the noise at n=200.
+- **Speed was about the same** for all three models (about 2.5 s per question at batch size 8). Qwen3 generates tokens fastest, but it also writes the most, so it doesn't finish sooner.
+- **Memory grows with model size:** Qwen3-1.7B needs half the GPU memory of Phi-4-mini, which makes it the best choice for tight memory budgets at a cost of about 8 accuracy points.
+- **Answer format was followed poorly.** SmolLM3 ended with `#### <number>` only 12% of the time and was mostly scored from the last number in its output. Qwen3 often used `\boxed{}` instead. Scores therefore depend partly on the fallback extraction rules.
+- **Agreement:** 142 questions were solved by all three models and 11 by none. Phi-4-mini solved 7 questions that no other model got right, Qwen3 solved 4 and SmolLM3 solved 3.
