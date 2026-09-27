@@ -1,6 +1,6 @@
 # slms vs system-one models
 
-Small experiments comparing small language models (SLMs) to each other and against 'system-one' models i.e. jev/layla. Each experiment is a self-contained Jupyter notebook that runs on Google Colab's free GPU.
+Small experiments comparing small language models (SLMs) to each other and against 'system-one' models i.e. jev/Laya. Each experiment is a self-contained Jupyter notebook that runs on Google Colab's free GPU.
 
 ## Experiments
 
