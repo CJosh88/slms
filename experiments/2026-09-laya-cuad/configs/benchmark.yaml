@@ -1,0 +1,39 @@
+dataset:
+  processed_path: data/processed/cuad_yesno.jsonl
+  # null = all 20,910 examples; set an int for quick runs
+  limit: null
+  seed: 42
+  # optional subset of category names; empty = all 41
+  categories: []
+
+# Same context strategy is applied to every model for a fair comparison.
+context:
+  strategy: chunk_any_yes   # truncate | chunk_any_yes
+  max_chars: 24000          # ~6k tokens; sized for small local models
+  chunk_overlap: 1000
+
+models:
+  ollama:
+    model: qwen2.5:3b
+    temperature: 0.0
+    num_ctx: 8192
+    timeout_s: 300
+  laya:
+    model: convaiinnovations/laya
+    subfolder: null       # null = English checkpoint; "multilingual" for the 1,024-token mmBERT one
+    device: null          # null = auto (cuda if available)
+    threshold: 0.5        # Yes when P(true) >= threshold
+    batch_size: 32        # chunks per forward pass
+    max_len: null         # null = checkpoint default (512 tokens for English)
+    fast: false           # TileLang CUDA fast path; needs `pip install "laya[fast]"`
+    # Laya's 512-token window holds ~320 tokens of contract once the question and options are
+    # encoded, so it has to use smaller chunks than the shared setting.
+    context:
+      max_chars: 1200
+      chunk_overlap: 200
+
+run:
+  retry_errors: true   # rerun examples that errored or gave no answer
+  overwrite: false     # true = ignore saved predictions and start fresh
+
+output_dir: results
