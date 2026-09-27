@@ -17,7 +17,7 @@ Neither model requires a Hugging Face login.
 
 ## Dataset
 
-[BoolQ](https://huggingface.co/datasets/google/boolq) (`google/boolq`, `validation` split, CC-BY-SA-3.0). It has naturally occurring yes/no questions, each paired with a Wikipedia passage (~110 tokens on average), so almost every input fits in Laya's 512-token window. The notebook uses 500 randomly chosen examples (seed 42). Set `N_SAMPLES = None` to use all 3,270.
+[BoolQ](https://huggingface.co/datasets/google/boolq) (`google/boolq`, `validation` split, CC-BY-SA-3.0). It has naturally occurring yes/no questions, each paired with a Wikipedia passage (~110 tokens on average), so almost every input fits in Laya's 512-token window. The notebook defaults to 500 randomly chosen examples (seed 42). The results below use all 3,270 (`N_SAMPLES = None`).
 
 ## Method
 
@@ -38,4 +38,22 @@ To run locally, use `pip install -r requirements.txt` and a CUDA GPU with at lea
 
 ## Results
 
-Not run yet.
+The full BoolQ validation split (3,270 examples, run with `N_SAMPLES = None`) on a Colab T4, fp16. Per-example outputs are in [`results.csv`](results.csv).
+
+| Model | Accuracy | 95% CI | F1 (Yes) | ROC-AUC | Brier | ECE | ms / example | Peak GPU memory |
+|---|---|---|---|---|---|---|---|---|
+| Majority class (always Yes) | 62.2% | | | | | | | |
+| Laya (421M) | 75.7% | 74.2–77.1% | 0.811 | 0.812 | 0.170 | **0.065** | **50** (batch 1) | **2.7 GB** |
+| Phi-4-mini (3.8B) | **81.4%** | 80.0–82.7% | **0.835** | **0.919** | **0.143** | 0.133 | 118 (batch 8) | 9.0 GB |
+
+![Accuracy, latency and calibration](figures/accuracy_speed_calibration.png)
+
+**Takeaways**
+
+- **Phi-4-mini is more accurate, by 5.7 points.** The gap is real: in the paired comparison, Phi-4-mini alone was right on 572 questions and Laya alone on 386, which gives an exact McNemar p ≈ 2e-9. Its ROC-AUC (0.919 vs 0.812) shows that it also ranks answers much better, not just that it sits at a better threshold.
+- **Laya is better calibrated.** Its ECE is half of Phi-4-mini's (0.065 vs 0.133). Phi-4-mini is biased towards *No*: it answers Yes 50% of the time against a true Yes rate of 62%, and its reliability curve sits above the diagonal. With a threshold of 0.3 instead of 0.5, Phi-4-mini would reach about 84%, but that threshold was picked on the test set, so treat it as an upper bound.
+- **Laya is much cheaper.** It used under a third of the GPU memory and took under half the time per example, even at batch size 1 against Phi-4-mini's batch of 8. It is also 9× smaller.
+- **Agreement:** both models were right on 2,089 questions and both wrong on 223.
+- **Input length was not a factor.** Only 20 of the 3,270 passages (0.6%) went over the 400-token budget and were truncated. Phi-4-mini answered in the requested Yes/No format 100% of the time.
+
+The follow-up experiment [`2026-09-laya-finetune-boolq`](../2026-09-laya-finetune-boolq) tests whether fine-tuning Laya on 3,000 BoolQ training examples closes the gap.
