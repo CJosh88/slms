@@ -1,0 +1,11 @@
+# Colab already includes torch, pandas, numpy, scikit-learn, scipy and matplotlib. The notebook installs only the pinned packages below.
+laya>=0.3.20
+transformers==4.57.3
+accelerate==1.11.0
+datasets==4.8.5
+torch
+pandas
+numpy
+scikit-learn
+scipy
+matplotlib
