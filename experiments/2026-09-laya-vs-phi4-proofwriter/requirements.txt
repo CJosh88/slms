@@ -1,0 +1,13 @@
+# Colab already includes torch, pandas, numpy, scikit-learn, scipy, statsmodels and matplotlib. The notebook installs only the pinned packages below.
+# laya is pinned exactly because the fine-tuning cells use its internals (build_sequence, build_model, proper_reward).
+laya==0.3.21
+transformers==4.57.3
+accelerate==1.11.0
+safetensors
+torch
+pandas
+numpy
+scikit-learn
+scipy
+statsmodels
+matplotlib
