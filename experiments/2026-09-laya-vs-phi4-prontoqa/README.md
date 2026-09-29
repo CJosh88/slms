@@ -71,6 +71,91 @@ To regenerate the data, run `bash scripts/generate_data.sh` in an environment wi
 
 ## Results
 
-*Pending the first full run.*
+1,000 test questions (200 per hop count, balanced on label and on whether the statement contains "not"), run on a Colab T4 in fp16. The per-question outputs, including every CoT trace, are in [`results.csv`](results.csv). Per-hop numbers are in [`by_hops.csv`](by_hops.csv).
 
-The headline figure will be `figures/accuracy_vs_hops.png`, with accuracy at threshold 0.5 and at the tuned threshold. The supporting figures are `signal_and_bias.png` (ROC-AUC, answer bias and per-label accuracy against hops) and `cost_and_finetuning.png`.
+![Accuracy vs reasoning hops](figures/accuracy_vs_hops.png)
+
+### Accuracy by hop count (%)
+
+Each point is ±~7 points (95% Wilson CI). Chance is 50%, and the "not" shortcut also scores exactly 50%.
+
+| Hops | Laya zero-shot | Laya fine-tuned | Phi-4-mini direct | Phi-4-mini CoT |
+|---|---|---|---|---|
+| 1 | 53.5 | 99.5 | 71.0 | **85.0** |
+| 2 | 50.5 | 99.5 | 57.5 | 75.5 |
+| 3 | 50.0 | 99.0 | 59.0 | 54.5 |
+| 4 | 52.0 | 99.0 | 60.0 | 52.5 |
+| 5 | 51.0 | 98.0 | 53.5 | 47.5 |
+| **Overall** | 51.4 | 99.0 | 60.2 | 63.0 |
+| Slope (log-odds per hop) | −0.01 (p = 0.75) | −0.37 (p = 0.13) | −0.14 (p = 0.003) | −0.44 (p = 1e-18) |
+| ROC-AUC, 1 → 5 hops | 0.57 → 0.55 | 1.00 → 0.99 | 0.79 → 0.59 | – |
+| Share answered True | 3% | 51% | 43% | 43% |
+| ms per question | 81 (batch 1) | 44 (batch 1) | 84 (batch 8) | 8,825 (batch 8) |
+| Peak GPU memory | 2.4 GB | 4.1 GB | 10.9 GB | 10.9 GB |
+
+Fine-tuning took 9.0 minutes (3 epochs, 3,000 examples, peak 8.3 GB). Calibration accuracy was already 99.3% after the first epoch. The fitted `noul` temperature hit the upper clamp of 5.0: the model is so confident that its probabilities couldn't be softened enough.
+
+### Findings
+
+**1. Fine-tuned Laya's 99% comes with a shortcut that makes it uninformative about chaining.**
+
+Every generated theory has exactly two rules that end in the queried property, with opposite polarity: the real rule and a distractor. The generator attaches the distractor to a fresh concept that appears **nowhere else** in the theory. The real rule's subject sits on the proof chain, so it always recurs.
+
+That makes the answer computable without following a single link:
+1. Find the two rules ending in the property.
+2. Keep the one whose subject word recurs.
+3. Compare its "not" with the statement's.
+
+[`scripts/shortcut_check.py`](scripts/shortcut_check.py) scores this rule at **100% on all 2,000 generated test questions, at every hop count**. It is also 100% on all 3,500 training questions, so the cue was available throughout fine-tuning.
+
+An example (3 hops, gold answer False):
+
+> … **Tumpuses are aggressive.** … **Gorpuses are not aggressive.** Each impus is a gorpus. … Max is a brimpus. Max is a jompus.
+> Statement: *Max is aggressive.*
+
+- The intended solution: Max → jompus → impus → gorpus → not aggressive.
+- The shortcut: *tumpus* appears once and *gorpus* four times, so keep "Gorpuses are **not** aggressive". Its polarity is the opposite of the statement's, so the answer is False.
+
+Counting how often a word recurs is exactly what one attention pass does easily, and nothing in the cue depends on hop count. That fits both the flat curve and reaching 99% after one epoch.
+
+This doesn't prove Laya uses this particular cue. It shows that 99% here is **not evidence** that Laya can chain facts. The ProntoQA authors built the distractors for few-shot LLM evaluation, where the model never trains on the generator's output, so this isn't a flaw for their purpose.
+
+**2. Zero-shot Laya has no signal, even at 1 hop.**
+- It answers False 97% of the time, with a median P(true) of 0.22.
+- ROC-AUC is 0.41–0.57 at every hop count, and accuracy at a tuned threshold is also about 50%. So it isn't a bias that a better threshold would fix.
+- The question type is the same `noul` that scored 76% on BoolQ, so the format isn't to blame.
+- The likely difference is vocabulary. BoolQ lets Laya match question wording against a passage. Fictional rules ("Every wumpus is a yumpus") give it nothing to match, and even one hop needs two sentences combined.
+
+**3. Phi-4-mini direct declines modestly with hops.** It drops from 71% at 1 hop to 54–60% beyond, and ROC-AUC falls from 0.79 to 0.59. It handles one hop and struggles after that.
+
+**4. Step-by-step reasoning helps at 1–2 hops, then degrades fastest of all, and much of that is runaway generation.**
+
+| Hops | Mean CoT tokens | Hit the 1,024-token limit | Answer parsed | Accuracy when parsed |
+|---|---|---|---|---|
+| 1 | 157 | 6% | 94% | 90% |
+| 2 | 246 | 13% | 87% | 87% |
+| 3 | 337 | 23% | 78% | 70% |
+| 4 | 387 | 27% | 74% | 71% |
+| 5 | 430 | 31% | 69% | 69% |
+
+On deeper questions, greedy decoding gets stuck in loops. It repeats "Tumpuses are gorpuses. Gorpuses are not bitter." or lists numbered "given facts" until it runs out of tokens, and those outputs count as wrong. That drives CoT below chance at 5 hops. Counting only parsed answers, accuracy still falls from 90% to 69%, so the reasoning itself degrades too, but more gently.
+
+### What this means for the hypothesis
+
+| Hypothesis | Verdict |
+|---|---|
+| Laya does well at 1 hop and falls off as hops grow | **Not testable here.** Zero-shot Laya is at chance at every hop count. The fine-tuned version can reach 99% through a cue that needs no chaining. |
+| Phi-4-mini degrades more slowly than Laya | **Not testable**, for the same reason. |
+| Phi-4-mini's accuracy falls with hop count | **Supported** for both direct (p = 0.003) and CoT (p = 1e-18). |
+| Step-by-step reasoning degrades more slowly than answering directly | **Not supported as run.** CoT is much better at 1–2 hops (+14 and +18 points) but falls fastest, largely because greedy decoding loops past the token limit. |
+
+Together with the [ProofWriter run](../2026-09-laya-vs-phi4-proofwriter), where "False if it says *not*" scored 64% at every depth, the broader lesson is this. Fine-tuning on generated reasoning data teaches the generator's quirks before (or instead of) the reasoning. A benchmark used for fine-tuned models needs a control for each quirk.
+
+### Next steps (hypotheses to test)
+
+1. **Shortcut-control test set.**
+   - Add rules *out of* each distractor concept (such as "Every tumpus is a numpus. Tumpuses are sunny."), so it appears as often as the real chain's concepts. Outgoing rules can't make the entity a member of the distractor concept, so no gold answer changes.
+   - Rescore fine-tuned Laya. *If it falls towards 50%, it learned the cue. If it stays high and declines with hops, it really is chaining.*
+2. **Retrain on controlled data.** Fine-tune Laya with the distractor cue removed, to see whether a single forward pass can learn multi-hop chaining when no shortcut exists.
+3. **Fix CoT decoding.** Stop at the first `Answer:` line and add a mild repetition penalty, or use a small self-consistency vote. Then check whether CoT still degrades faster than direct once looping is controlled.
+4. **Zero-shot Laya with real-word ontologies.** ProntoQA's `--ontology true` option uses real words. It would test whether Laya's zero-shot failure comes from the made-up vocabulary rather than the reasoning.
